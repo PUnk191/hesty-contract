@@ -10,27 +10,7 @@ import {IIssuance} from "./interfaces/IIssuance.sol";
 import "./interfaces/IReferral.sol";
 import "./Constants.sol";
 
-/*
 
-    @title Token Factory
-
-    @notice Manages issuance of property tokens, stores them until they are bought
-            and manages the distribution of revenue through holders. Allows
-            investors to also claim the investment returns.
-            In case the property fails to raise then allows users to claim
-            funds back.
-
-    @author Pedro G. S. Ferreira
-
-    .##.....##.########.########.#########.##....##.
-    .##.....##.##.......##..........##......##..##.
-    .##.....##.##.........##........##........##.
-    .#########.########.....##......##........##.
-    .##.....##.##..........##.......##........##.
-    .##.....##.##.........##........##........##.
-    .##.....##.########.########....##........##.
-
-*/
 
 contract TokenFactory is
 ReentrancyGuard,
@@ -105,14 +85,6 @@ Constants {
     }
 
 
-    /**
-        @dev    Constructor for Token Factory
-        @param  fee Investment fee charged by Hesty (in Basis Points)
-        @param  refFee_ Referral Fee charged by referrals (in Basis Points)
-        @param  treasury_ The Multi-Signature Address that will receive Hesty fees revenue
-        @param  minInvAmount_ Minimum amount a user can invest
-        @param  ctrHestyControl_ Contract that manages access to certain functions
-    */
     constructor(
         uint256 fee,
         uint256 refFee_,
@@ -135,59 +107,42 @@ Constants {
 
     }
 
-    /**
-        @dev Checks that `msg.sender` is an Admin
-    */
+   
     modifier onlyAdmin(){
         ctrHestyControl.onlyAdmin(msg.sender);
         _;
     }
 
-    /**
-        @dev Checks that `msg.sender` is an Admin
-    */
+  
     modifier onlyFundsManager(){
         ctrHestyControl.onlyFundsManager(msg.sender);
         _;
     }
 
-    /**
-        @dev Checks that contract is initialized
-    */
+   
     modifier onlyWhenInitialized(){
         require(initialized, "Not yet init");
         _;
     }
 
-    /**
-        @dev Checks that `msg.sender` is not blacklisted
-    */
+    
     modifier whenNotBlackListed(){
         require(!ctrHestyControl.blackList(msg.sender), "Blacklisted");
         _;
     }
 
-    /**
-        @dev Checks that `msg.sender` has is KYC approved
-    */
+   
     modifier whenKYCApproved(address user){
         require(ctrHestyControl.kycCompleted(user), "No KYC Made");
         _;
     }
 
-    /**
-        @dev Checks that contracts are not paused
-    */
+
     modifier whenNotAllPaused(){
         require(!ctrHestyControl.paused(), "All Hesty Paused");
         _;
     }
 
-    /**
-        @dev    Initialized Token Factory Contract
-        @dev    It emits a `InitializeFactory` event.
-        @param  referralSystemCtr_ Referral System Contract that manages referrals rewards
-    */
     function initialize(address referralSystemCtr_,
         address ctrHestyIssuance_) external onlyAdmin{
 
@@ -200,19 +155,7 @@ Constants {
         emit InitializeFactory(referralSystemCtr_, ctrHestyIssuance_);
 
     }
-
-    /**===================================================
-        NON OWNER STATE MODIFIABLE FUNTIONS
-    ======================================================**/
-
-    /**
-        @dev    Issues a new property token
-        @dev    It emits a `CreateProperty` event.
-        @param  amount The amount of tokens to issue
-        @param  tokenPrice Token Price
-        @param  threshold Amount to reach in order to proceed to production
-        @param  paymentToken Token that will be charged on every investment made
-    */
+    
     function createProperty(
         uint256 amount,
         uint256 listingTokenFee,
@@ -256,16 +199,7 @@ Constants {
 
         return propertyCounter - 1;
     }
-
-
-    /**
-        @dev    Function to buy property tokens
-        @dev    It emits a `NewInvestment` event.
-        @dev    If there is a referral store the fee to pay and transfer funds to this contract
-        @param  id Property id
-        @param  amount Amount of tokens that user wants to buy
-        @param  ref The referral of the user, address(0) if doesn't exist
-    */
+ 
     function buyTokens(
         address onBehalfOf,
         uint256 id,
@@ -275,28 +209,22 @@ Constants {
 
         PropertyInfo storage p = property[id];
 
-        // Calculate how much costs to buy tokens
         uint256 boughtTokensPrice = amount * p.price;
 
-        // Require that raise is still active and not expired
         require(p.raiseDeadline >= block.timestamp, "Raise expired");
         require(boughtTokensPrice >= minInvAmount, "Lower than min");
         require(property[id].approved && !property[id].isCompleted, "Property Not For Sale");
         require(p.raised + amount <= p.amountToSell, "Too much raised");
 
-        // Calculate the investment fee and then get the total investment cost
         uint256 fee    = boughtTokensPrice * platformFeeBasisPoints / BASIS_POINTS;
         uint256 total  = boughtTokensPrice + fee;
 
-        // Charge investment cost from user
         SafeERC20.safeTransferFrom(p.paymentToken,msg.sender, address(this), total);
 
-        // Store Platform fee and user Invested Amount Paid
         platformFee[id]                += fee;
         userInvested[msg.sender][id]   += boughtTokensPrice;
         rightForTokens[onBehalfOf][id] += amount;
 
-        /// @dev Calculate owners fee
         uint256 ownersFee = boughtTokensPrice * ownersFeeBasisPoints[id] / BASIS_POINTS;
 
         ownersPlatformFee[id]  += ownersFee;
@@ -310,11 +238,6 @@ Constants {
         emit NewInvestment(id, onBehalfOf, amount, boughtTokensPrice, block.timestamp);
     }
 
-    /**
-@dev    Function that tries to add referral rewards
-        @param  ref user that referenced the buyer
-        @param  boughtTokensPrice Amount invested by buyer
-    */
     function referralRewards(address onBehalfOf, address ref, uint256 boughtTokensPrice, uint256 id) internal{
 
         if(ref != address(0)){
@@ -323,8 +246,6 @@ Constants {
 
             uint256 refFee_ = boughtTokensPrice * refFeeBasisPoints / BASIS_POINTS;
 
-            // maxAmountOfRefRev can be lowered and userevenue may be higher than
-            // maxAmountOfRefRev after that, causing maxAmountOfRefRev - userRevenue to be negative
             uint256 maxAmountOfLocalRefRev = (maxAmountOfRefRev >= userRevenue ) ? maxAmountOfRefRev : userRevenue;
 
             refFee_ = (userRevenue + refFee_ > maxAmountOfLocalRefRev) ? maxAmountOfLocalRefRev - userRevenue : refFee_;
@@ -332,7 +253,6 @@ Constants {
             /// @dev maxNumberOfReferral = 20 && maxAmountOfRefRev = €10000
             if(userNumberRefs < maxNumberOfReferrals && refFee_ > 0){
 
-                // Try to Add Referral rewards but don't stop if it fails
                 try referralSystemCtr.addRewards(ref, onBehalfOf,id, refFee_){
                     refFee[id] += refFee_;
 
@@ -343,14 +263,6 @@ Constants {
         }
     }
 
-
-
-    /*
-        @dev    Distribution of revenue through property token holders
-        @dev    It emits a `RevenuePayment` event.
-        @param  id Property id
-        @param  amount The amount of funds in EURC to distribute
-    */
     function distributeRevenue(uint256 id, uint256 amount) external nonReentrant whenNotAllPaused{
 
         PropertyInfo storage p = property[id];
@@ -365,19 +277,12 @@ Constants {
 
     }
 
-    /*
-        @dev    Get Property Tokens after property raize is complete
-        @dev    It emits a `GetInvestmentTokens` event.
-        @param  user User address
-        @param  id Property id
-    */
     function getInvestmentTokens(address user, uint256 id) external nonReentrant whenNotAllPaused{
 
         PropertyInfo storage p = property[id];
 
         require(p.isCompleted, "Time not valid");
 
-        // Transfer Asset to buyer
         if(rightForTokens[user][id] > 0){
             SafeERC20.safeTransfer(IERC20(p.asset), user, rightForTokens[user][id]);
             rightForTokens[user][id] = 0;
@@ -387,12 +292,6 @@ Constants {
         emit GetInvestmentTokens(user, id);
     }
 
-    /*
-        @dev    Claim Investment returns
-        @dev    It emits a `ClaimProfits` event.
-        @param  user that will receive investment returns
-        @param  id Property id
-    */
     function claimInvestmentReturns(address user, uint256 id) external nonReentrant whenNotAllPaused{
 
         PropertyInfo storage p = property[id];
@@ -404,12 +303,6 @@ Constants {
         emit ClaimProfits(user, id);
     }
 
-    /*
-        @dev    Claim Investment returns
-        @dev    It emits a `RecoverFunds` event.
-        @param  user that will receive recover investment
-        @param  id Property id
-    */
     function recoverFundsInvested(address user, uint256 id) external nonReentrant whenNotAllPaused {
 
         PropertyInfo storage p = property[id];
@@ -427,50 +320,21 @@ Constants {
 
     }
 
-    /**=====================================
-        Viewable Functions
-    =========================================*/
-
-    /**
-        @dev    Checks if people can claim their referral share of a property
-        @param  id Property Id
-        @return If it is already possible to claim referral rewards
-    */
     function isRefClaimable(uint256 id) external view returns(bool){
         return property[id].threshold <= property[id].raised * property[id].price && property[id].isCompleted;
     }
 
-    /**
-        @dev    Returns Property representative token
-        @param id Property Id
-        @return Property Token
-    */
     function getPropertyInfo(uint256 id) external view returns(address, address){
         return (address(property[id].asset), address(property[id].revenueToken));
     }
 
-
-
-    /**===================================================
-       OWNER STATE MODIFIABLE FUNTIONS
-   ======================================================**/
-
-    /*
-        @dev    Buy Tokens without spending funds, this helpful for offchain investments
-        @dev    It emits a `NewInvestment` event.
-        @param  id Property id
-        @param  buyer The user who will receive the property tokens
-        @param  amount The amount of property tokens to buy
-    */
     function adminBuyTokens(uint256 id, address buyer, uint256 amount) whenKYCApproved(buyer) external nonReentrant onlyFundsManager{
 
         PropertyInfo storage p    = property[id];
 
-        // Require that raise is still active and not expired
         require(p.raiseDeadline >= block.timestamp, "Raise expired");
         require(p.raised + amount <= p.amountToSell, "Too much raised");
 
-        // Calculate how much costs to buy tokens
         uint256 boughtTokensPrice = amount * p.price;
 
         rightForTokens[buyer][id] += amount;
@@ -481,13 +345,6 @@ Constants {
         emit NewInvestment(id, buyer, amount, boughtTokensPrice, block.timestamp);
     }
 
-    /**
-        @dev    Function to complete the property Raise
-        @dev    It emits a `CompleteRaise` event.
-        @dev    Send funds to property owner exchange address and fees to
-                platform multisig
-        @param  id Property Id
-    */
     function completeRaise(uint256 id) external onlyAdmin {
 
         PropertyInfo storage p = property[id];
@@ -503,23 +360,15 @@ Constants {
         SafeERC20.safeTransfer(p.paymentToken,treasury,  ownersPlatformFee[id]);
         ownersPlatformFee[id] = 0;
 
-        /// @dev Send property owners their share
         SafeERC20.safeTransfer(p.paymentToken,p.ownerExchAddr, propertyOwnerShare[id]);
         propertyOwnerShare[id] = 0;
 
-        /// @dev fund the referralSystem Contract with property referrals share
         SafeERC20.safeTransfer(p.paymentToken,address(referralSystemCtr), refFee[id]);
         refFee[id] = 0;
 
         emit CompleteRaise(id);
     }
 
-    /**
-        @dev     Approves property to start raise
-        @dev     It emits an `ApproveProperty` event.
-        @param   id Property Id
-        @param   raiseDeadline when the raise will end
-    */
     function approveProperty(uint256 id, uint256 raiseDeadline) external onlyAdmin{
 
         require(!property[id].approved, "Already Approved");
@@ -531,12 +380,6 @@ Constants {
         emit ApproveProperty(id, raiseDeadline);
     }
 
-    /**
-        @dev     In case Hesty or property Manager gives up from raising funds for property
-                 allow users to claim back their funds
-        @dev     It emits a `CancelProperty` event
-        @param   id Property Id
-    */
     function cancelProperty(uint256 id) external onlyAdmin{
 
         property[id].raiseDeadline = 0; // Important to allow investors to recover funds
@@ -546,12 +389,6 @@ Constants {
         emit CancelProperty(id);
     }
 
-    /**
-        @dev     Function to change platform fee
-        @dev     It emits a `NewPlatformFee` event.
-        @dev     Fee must be lower than total amount raised
-        @param   newFee New platform fee
-    */
     function setPlatformFee(uint256 newFee) external onlyAdmin{
 
         require(newFee < MAX_FEE_POINTS && newFee > refFeeBasisPoints, "Fee must be valid");
@@ -560,12 +397,6 @@ Constants {
         emit NewPlatformFee(newFee);
     }
 
-    /**
-        @dev     Function to change owners fee
-        @dev     It emits a `NewOwnersFee` event.
-        @dev     Fee must be lower than total amount raised
-        @param   newFee New owners fee
-    */
     function setOwnersFee(uint256 id, uint256 newFee) external onlyAdmin{
 
         require( newFee < MAX_FEE_POINTS, "Fee must be valid");
@@ -574,11 +405,6 @@ Constants {
         emit NewOwnersFee(id, newFee);
     }
 
-    /**
-        @dev   Function to change referral fee
-        @dev   Fee must be lower than fee charged by platform
-        @param newFee New referral fee
-    */
     function setRefFee(uint256 newFee) external onlyAdmin{
 
         require( newFee < platformFeeBasisPoints, "Fee must be valid");
@@ -587,13 +413,6 @@ Constants {
         emit NewReferralFee(newFee);
     }
 
-    /**
-        @dev    Function to change owners address where he will receive funds
-        @dev    It emits a `NewPropertyOwnerAddrReceiver` event.
-        @dev    Fee must be lower than fee charged by platform
-        @param  id Property Id
-        @param  newAddress New Property Owner Address
-    */
     function setNewPropertyOwnerReceiverAddress(uint256 id, address newAddress) external onlyAdmin{
 
         require( newAddress != address(0), "Address must be valid");
@@ -602,11 +421,6 @@ Constants {
         emit NewPropertyOwnerAddrReceiver(newAddress);
     }
 
-    /**
-        @dev    Function to extend property raise deadline
-        @param  id Property id
-        @param  newDeadline The deadline for the raise
-    */
     function extendRaiseForProperty(uint256 id, uint256 newDeadline) external onlyAdmin{
 
         PropertyInfo storage p = property[id];
@@ -618,10 +432,6 @@ Constants {
         emit NewPropertyDeadline(id, newDeadline);
     }
 
-    /**
-        @dev    Function to set minimum investment amount
-        @param  newMinInv Minimum Investment Amount
-    */
     function setMinInvAmount(uint256 newMinInv) external onlyAdmin{
         require(newMinInv > 0, "Amount too low");
         minInvAmount = newMinInv;
@@ -629,21 +439,12 @@ Constants {
         emit NewMinInvestmentAmount(newMinInv);
     }
 
-    /**
-        @dev    Function to set the maximum number of referrals a user can have
-        @param  newMax Maximum number of referrals
-    */
     function setMaxNumberOfReferrals(uint256 newMax) external onlyAdmin{
 
         maxNumberOfReferrals = newMax;
 
         emit NewMaxNReferrals(newMax);
     }
-
-    /**
-        @dev    Function to set the maximum amount of referral revenue
-        @param  newMax Maximum amount of revenue
-    */
     function setMaxAmountOfRefRev(uint256 newMax) external onlyAdmin{
 
         maxAmountOfRefRev = newMax;
@@ -651,12 +452,7 @@ Constants {
         emit NewMaxReferralRevenue(newMax);
     }
 
-    /**
-        @dev    Function to set a new treasury address
-        @dev    It emits a `NewTreasury` event.
-        @param  newTreasury The new treasury address
-    */
-    function setTreasury(address newTreasury) external onlyAdmin{
+     function setTreasury(address newTreasury) external onlyAdmin{
 
         require(newTreasury != address(0), "Not allowed");
         treasury = newTreasury;
@@ -664,12 +460,6 @@ Constants {
         emit NewTreasury(newTreasury);
     }
 
-    /**
-        @dev    Function to set a new Referral Management Contract
-        @dev    It emits a `NewReferralSystemCtr` event.
-        @param  newReferralContract The new Referral Management Contract
-
-    */
     function setReferralContract(address newReferralContract) external onlyAdmin{
 
         require(newReferralContract != address(0), "Not allowed");
@@ -678,12 +468,6 @@ Constants {
         emit NewReferralSystemCtr(newReferralContract);
     }
 
-    /**
-@dev    Function to set a new Referral Management Contract
-        @dev    It emits a ` NewIssuanceContract` event.
-        @param  newIssuanceCtr The new Issuance Management Contract
-
-    */
     function setIssuanceContract(address newIssuanceCtr) external onlyAdmin{
 
         require(newIssuanceCtr != address(0), "Not allowed");
